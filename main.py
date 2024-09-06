@@ -7,12 +7,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, ElementClickInterceptedException, ElementNotVisibleException
-from rich import print
+from rich.console import Console
 import time
 import shutil
 import re
 
-dir_name = "images"
+img_dir_relative = "images"
+console = Console()
 
 # List of possible selectors for cookie accept buttons
 possible_selectors = [
@@ -28,21 +29,22 @@ possible_selectors = [
 ]
 
 def accept_cookies(driver):
+    console.log("Will check if any cookies menu appears. if so, by default they shall be accepted.")
     for by, value in possible_selectors:
-        print('selector: ', value)
+        console.log('Trying cookie accept selector: ', value)
         try:
             WebDriverWait(driver, 10).until(EC.element_to_be_clickable((by, value))).click()
-            print("Cookies accepted using:", by, value)
+            console.log("Cookies accepted using:", by, value)
             return
         except (NoSuchElementException, ElementClickInterceptedException, ElementNotVisibleException, Exception):
             continue  # Try the next selector if this one fails
 
-    print("No cookie consent button found")
+    console.log("No cookie consent button found.")
 
 try:
-
-    if os.path.isdir(dir_name):
-        shutil.rmtree(dir_name)
+    dir_name = console.input("Enter the name you want to give this site (only lowercase alphabets without whitespaces): ").replace(" ", "").strip()
+    url = console.input("Enter the URL of the website you want to clone: ")
+    img_dir = os.path.join(dir_name, img_dir_relative)
 
     # Set up options for Chrome (headless or visible)
     chrome_options = Options()
@@ -52,13 +54,13 @@ try:
     driver = webdriver.Chrome(options=chrome_options)
 
     # Open the webpage
-    url = input("Enter the URL of the website you want to clone")
     driver.get(url)
-    print("Site opened. Sleeping for a bit for it to load.")
+    console.log("Site opened. Sleeping for a bit for it to load.")
 
     time.sleep(3)
     accept_cookies(driver)
-    time.sleep(3)
+    console.log("You can interact with the site for about 10 seconds, and get it to any state you want before it is cloned.")
+    time.sleep(10)
 
     # Step 1: Extract the HTML content
     html_content = driver.execute_script("return document.documentElement.outerHTML;")
@@ -81,8 +83,8 @@ try:
         return css;
     """)
 
-    if not os.path.exists('images'):
-        os.makedirs('images')
+    if not os.path.exists(img_dir):
+        os.makedirs(img_dir)
 
     image_map = {}
 
@@ -90,7 +92,7 @@ try:
     try:
         image_elements = driver.find_elements(By.TAG_NAME, 'img')
     except NoSuchElementException as ex:
-        print("<img> not found in DOM tree.")
+        console.log("<img> not found in DOM tree.")
     
     for index, img in enumerate(image_elements):
         img_url = img.get_attribute('src') # or img.get_attribute('data-src') or img.get_attribute('data-lazy') or img.get_attribute('srcset')
@@ -104,22 +106,22 @@ try:
         try:
             img_data = requests.get(img_url).content
             img_name = f'image_{index}.png'
-            img_path = os.path.join(dir_name, img_name)
+            img_path = os.path.join(img_dir, img_name)
             
             # Save the image locally
             with open(img_path, 'wb') as img_file:
                 img_file.write(img_data)
             
             # Record the local image path to replace in the HTML
-            image_map[img_url] = os.path.join(dir_name, img_name)
+            image_map[img_url] = os.path.join(img_dir_relative, img_name)
         except Exception as e:
-            print(f"Error downloading {img_url}: {e}")
+            console.log(f"Error downloading {img_url}: {e}")
 
     # Step 3.2: Find inline background images (e.g., <i> with style="background-image: url(...)")
     try:
         background_elements = driver.find_elements(By.XPATH, '//*[@style]')
     except NoSuchElementException as ex:
-        print("inline <style> not found in DOM tree.")
+        console.log("inline <style> not found in DOM tree.")
 
     for element in background_elements:
         style_attr = element.get_attribute('style')
@@ -137,17 +139,17 @@ try:
                 # Download the background image
                 img_data = requests.get(bg_url).content
                 img_name = f'background_{index}.png'
-                img_path = os.path.join(dir_name, img_name)
+                img_path = os.path.join(img_dir, img_name)
                 
                 # Save the image locally
                 with open(img_path, 'wb') as img_file:
                     img_file.write(img_data)
                 
                 # Record the local path and update the inline style
-                image_map[bg_url] = os.path.join(dir_name, img_name)
+                image_map[bg_url] = os.path.join(img_dir_relative, img_name)
                 html_content = html_content.replace(bg_url, image_map[bg_url])
             except Exception as e:
-                print(f"Error downloading background image {bg_url}: {e}")
+                console.log(f"Error downloading background image {bg_url}: {e}")
 
     # Step 3.3: Find background images in CSS
     css_bg_images = re.findall(r'background-image:\s*url\(["\']?(.*?)["\']?\)', css_styles)
@@ -161,38 +163,36 @@ try:
         try:
             img_data = requests.get(bg_url).content
             img_name = f'css_background_{index}.png'
-            img_path = os.path.join(dir_name, img_name)
+            img_path = os.path.join(img_dir, img_name)
             
             # Save the image locally
             with open(img_path, 'wb') as img_file:
                 img_file.write(img_data)
             
             # Record the local path and update the CSS
-            css_styles = css_styles.replace(bg_url, os.path.join(dir_name, img_name))
+            css_styles = css_styles.replace(bg_url, os.path.join(img_dir_relative, img_name))
         except Exception as e:
-            print(f"Error downloading background image from CSS {bg_url}: {e}")
+            console.log(f"Error downloading background image from CSS {bg_url}: {e}")
     
-    print(image_map)
-
     # Step 4: Replace image URLs in the HTML content
     for img_url, local_path in image_map.items():
         if img_url.startswith(('http:', 'https:')):
             html_content = html_content.replace(img_url, local_path)
     
-    print("Styles parsed")
+    console.log("Styles parsed.")
 
     # Step 5: Combine HTML and CSS
     full_page = f"<style>\n{css_styles}\n</style>\n{html_content}"
 
     # Step 6: Save the updated HTML content
-    with open('webpage_with_styles.html', 'w', encoding='utf-8') as file:
+    with open(f'{dir_name}/index.html', 'w', encoding='utf-8') as file:
         file.write(full_page)
     
-    print("Assets saved into file.")
+    console.log(f"Assets saved into file, in the {dir_name} folder.")
 
 except Exception as ex:
-    print(ex)
+    console.log(ex)
 finally:
     # Close the driver
     driver.quit()
-    print("Closed driver. Quitting gracefully.")
+    console.log("Closed driver. Quitting gracefully.")
