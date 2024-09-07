@@ -20,3 +20,6 @@ pyinstaller -F --paths=<path-to-venv>/site-packages main.py
 ```
 
 You should then have the binary executable in the `dist/` folder. Simply run this.
+
+# Note:
+This project should be used only for educational purposes only. I am not liable for any consequences of you using this software for whatever it is you do.
